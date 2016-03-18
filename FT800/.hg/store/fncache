@@ -1,0 +1,9 @@
+data/FT_Hal_Utils.h.i
+data/FT_Gpu_Hal.h.i
+data/FT_CoPro_Cmds.cpp.i
+data/FT_Platform.h.i
+data/FT_CoPro_Cmds.h.i
+data/FT_Gpu_Hal.cpp.i
+data/FT_LCD_Type.h.i
+data/FT_Gpu.h.i
+data/FT_DataTypes.h.i
