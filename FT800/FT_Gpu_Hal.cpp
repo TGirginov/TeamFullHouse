@@ -4,28 +4,103 @@
  * Released under the MIT License: http://mbed.org/license/mit */
  
 #include "FT_Platform.h"
-#include "mbed.h"
+//#include "mbed.h"
+#include "common.h"
 #include "FT_LCD_Type.h"
 
-FT800::FT800(PinName mosi,
-			PinName miso,
-			PinName sck,
-			PinName ss,
-			PinName intr,
-			PinName pd)
-	:_spi(mosi, miso, sck),
-	 _ss(ss),
-	 _f800_isr(InterruptIn(intr)),
-	 _pd(pd)
-	 {
-	 	 _ss = 0;
+#DEFINE power(????) #what is location of pd on PCB?
+
+FT800::FT800(void)
+	{
+		SIM_SCGC4 |= SIM_SCGC4_SPI0_MASK|SIM_SCGC4_SPI1_MASK; 		   //Enable SPI0 and SPI1 Clock gate 
+		SIM_SCGC5 |= SIM_SCGC5_PORTA_MASK|SIM_SCGC5_PORTB_MASK|SIM_SCGC5_PORTC_MASK|SIM_SCGC5_PORTD_MASK|SIM_SCGC5_PORTE_MASK|SIM_SCGC5_PORTF_MASK|SIM_SCGC5_PORTG_MASK|SIM_SCGC5_PORTH_MASK|SIM_SCGC5_PORTI_MASK; 	 
+	  
+		PORTD_PCR1 &= ~PORT_PCR_MUX_MASK;        //SPI0
+		PORTD_PCR1 |= PORT_PCR_MUX(1) |0X03;			  //Use PTD1 as SPI0_CS  // configure it as the GPIO 
+		//PORTD_PCR1 |= PORT_PCR_MUX(3) |0X03;			  //Use PTD1 as SPI0_CS    
+		PORTD_PCR2 &= ~PORT_PCR_MUX_MASK;
+		PORTD_PCR2 |= PORT_PCR_MUX(3) |0X03;			  //Use PTD2 as SPI0_SCK 
+		PORTD_PCR3 &= ~PORT_PCR_MUX_MASK;
+		PORTD_PCR3 |= PORT_PCR_MUX(3) |0X03;			  //Use PTD3 as SPI0_MOSI  
+		PORTD_PCR4 &= ~PORT_PCR_MUX_MASK;
+		PORTD_PCR4 = PORT_PCR_MUX(3) |0X03;			          //Use PTD4 as SPI0_MISO
+		
+		//NEED PORT FOR PD ON PCB
+		PORTC_PCR7 = PORT_PCR_MUX(1) | PORT_PCR_DSE_MASK;  //Enable GPIO on on the pin
+		GPIOC_PDDR |= power;
+		
+
+		GPIOD_PDDR |=  0X02;
+		GPIOD_PDOR |=  0X02; // output high
+		
+		
+	    //=======================Configure SPI0 
+    	SPI0_C1 |= SPI_C1_MSTR_MASK;	  //-----master----bus clock is 12.5Mhz--0.08us--
+		
+		//SPI0_BR = 0x43;  //SPPR = 4, SPR = 3, bps div = (SPPR+1)*2^(SPR+1) = 80,----300Khz
+		//SPI0_BR = 0x40; //bps div = 10,---------0.8us
+		//SPI0_BR = 0x30; //bps div = 8,----------0.64us
+		//SPI0_BR = 0x10; //bps div = 4,----------0.32us
+		//SPI0_BR = 0x00; //bps div = 2,----------0.16us----6.125Mhz
+		//SPI0_BR = 0x54; //bps div = 192,----------15.36us
+		//SPI0_BR = 0x77; //bps div = 2048,----------163.84us 
+		//SPI0_BR = 0x78;	  //bps div = 8*2^9 = 4096---327.68us
+		SPI0_C1 |= SPI_C1_SSOE_MASK;      //|SPI0_C1_CPOL_MASK|SPI0_C1_LSBFE_MASK;
+		
+		//SPI0_C1 |= SPI_C1_CPHA_MASK;
+		SPI0_C1 &= (~SPI_C1_CPHA_MASK);
+
+		SPI0_C1 &= (~SPI_C1_CPOL_MASK);
+		//SPI0_C1 |= SPI_C1_CPOL_MASK;
+
+		SPI0_C1 &= (~SPI_C1_LSBFE_MASK);
+		//SPI0_C1 |= SPI_C1_LSBFE_MASK;
+
+		SPI0_C1 &= (~SPI_C1_SPIE_MASK);   //Disable RX interrrupt
+  		//SPI0_C1 |= SPI_C1_SPIE_MASK;	   //enable RX interrrupt 		  
+		SPI0_C1 &= (~SPI_C1_SPTIE_MASK);	   //Disable the transmit interrupt 
+ 		//SPI0_C1 |= SPI_C1_SPTIE_MASK;	   //Enable the transime interrupt
+
+		SPI0_C2 |= SPI_C2_MODFEN_MASK;
+        SPI0_C1 |= SPI_C1_SPE_MASK;
+		
+	 	/*  _ss = 0;
 	 	 _spi.format(8,0);                  // 8 bit spi mode 0
     	 _spi.frequency(4000000);          // start with 10 Mhz SPI clock
     	 _ss = 1;                           // cs high
-    	 _pd = 1;                           // PD high 
+    	 _pd = 1;                           // PD high  */
+		 GPIOC_PSOR=power; //NEED THE PORT ON PCB
 		 Bootup();   	
-	 }
+	}
 
+//Kinetis SPI functions
+void hal_spi_transfer_start(void)
+{
+    GPIOD_PCOR |=  0X02; // output LOW CS LOW
+}
+
+void hal_spi_transfer_stop(void)
+{
+
+   GPIOD_PDOR |=  0X02; // output high
+}
+
+uint8 hal_spi_transfer_one_byte(uint8 v)
+{
+   int dummy =0;
+   char buff=0;
+
+   while ((SPI0_S & SPI_S_SPTEF_MASK) == 0)
+   {
+	dummy++;
+    }
+   dummy = SPI0_S;
+   SPI0_DL = v; 
+   
+   while ((SPI0_S & SPI_S_SPRF_MASK) == 0);
+   buff = SPI0_DL;
+   return buff;         
+}
 
 ft_bool_t FT800::Bootup(void){
 	Ft_Gpu_Hal_Open();
@@ -154,17 +229,26 @@ ft_void_t FT800::Ft_Gpu_Hal_DeInit()
 ft_void_t  FT800::Ft_Gpu_Hal_StartTransfer( FT_GPU_TRANSFERDIR_T rw,ft_uint32_t addr)
 {
 	if (FT_GPU_READ == rw){
-		_ss = 0;       // cs low
+		/* _ss = 0;       // cs low
 		_spi.write(addr >> 16);
 		_spi.write(addr >> 8);
 		_spi.write(addr & 0xff);
-		_spi.write(0); //Dummy Read Byte
+		_spi.write(0); //Dummy Read Byte */
+		hal_spi_transfer_start();
+		hal_spi_transfer_one_byte(addr >> 16);
+		hal_spi_transfer_one_byte(addr >> 8);
+		hal_spi_transfer_one_byte(addr & 0xff);
+		hal_spi_transfer_one_byte(0);
 		status = FT_GPU_HAL_READING;
 	}else{
-		_ss = 0;       // cs low
+		/* _ss = 0;       // cs low
 		_spi.write(0x80 | (addr >> 16));
 		_spi.write(addr >> 8);
-		_spi.write(addr & 0xff);
+		_spi.write(addr & 0xff); */
+		hal_spi_transfer_start();
+		hal_spi_transfer_one_byte(0x80 | (addr >> 16));
+		hal_spi_transfer_one_byte(addr >> 8);
+		hal_spi_transfer_one_byte(addr & 0xff);
 		status = FT_GPU_HAL_WRITING;
 	}
 }
@@ -190,7 +274,8 @@ ft_uint8_t  FT800::Ft_Gpu_Hal_TransferString( const ft_char8_t *string)
 
 ft_uint8_t  FT800::Ft_Gpu_Hal_Transfer8( ft_uint8_t value)
 {
-        return _spi.write(value);	
+        //return _spi.write(value);	
+		return hal_spi_transfer_one_byte(value);
 }
 
 
@@ -198,7 +283,7 @@ ft_uint16_t  FT800::Ft_Gpu_Hal_Transfer16( ft_uint16_t value)
 {
 	ft_uint16_t retVal = 0;
 
-        if (status == FT_GPU_HAL_WRITING){
+    if (status == FT_GPU_HAL_WRITING){
 		Ft_Gpu_Hal_Transfer8( value & 0xFF);//LSB first
 		Ft_Gpu_Hal_Transfer8( (value >> 8) & 0xFF);
 	}else{
@@ -224,7 +309,8 @@ ft_uint32_t  FT800::Ft_Gpu_Hal_Transfer32( ft_uint32_t value)
 
 ft_void_t   FT800::Ft_Gpu_Hal_EndTransfer( )
 {
-	_ss = 1; 
+	//_ss = 1; 
+	hal_spi_transfer_stop();
 	status = FT_GPU_HAL_OPENED;
 }
 
@@ -275,11 +361,16 @@ ft_void_t FT800::Ft_Gpu_Hal_Wr32( ft_uint32_t addr, ft_uint32_t v)
 
 ft_void_t FT800::Ft_Gpu_HostCommand( ft_uint8_t cmd)
 {
-  _ss = 0;
+  /* _ss = 0;
   _spi.write(cmd);
   _spi.write(0x00);
   _spi.write(0x00);
-  _ss = 1;
+  _ss = 1; */
+  hal_spi_transfer_start();
+  hal_spi_transfer_one_byte(cmd);
+  hal_spi_transfer_one_byte(0x00);
+  hal_spi_transfer_one_byte(0x00);
+  hal_spi_transfer_stop();
 }
 
 ft_void_t FT800::Ft_Gpu_ClockSelect( FT_GPU_PLL_SOURCE_T pllsource)
@@ -440,18 +531,22 @@ ft_void_t FT800::Ft_Gpu_Hal_Powercycle(  ft_bool_t up)
 	if (up)
 	{
              //Toggle PD_N from low to high for power up switch  
-            _pd = 0; 
+            GPIOC_PCOR=power;
+			//_pd = 0; 
             Ft_Gpu_Hal_Sleep(20);
 
-            _pd = 1;
+            GPIOC_PSOR=power;
+			//_pd = 1;
             Ft_Gpu_Hal_Sleep(20);
 	}else
 	{
              //Toggle PD_N from high to low for power down switch
-            _pd = 1;
+            GPIOC_PSOR=power;
+			//_pd = 1;
             Ft_Gpu_Hal_Sleep(20);
             
-            _pd = 0;
+            GPIOC_PCOR=power;
+			//_pd = 0;
             Ft_Gpu_Hal_Sleep(20);
 	}
 }

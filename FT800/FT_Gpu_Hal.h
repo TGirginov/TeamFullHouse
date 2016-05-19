@@ -18,7 +18,8 @@
 #ifndef FT_GPU_HAL_H
 #define FT_GPU_HAL_H
 
-#include "mbed.h"
+//#include "mbed.h"
+#include "common.h"
 #include "FT_DataTypes.h"
 
 typedef enum {
@@ -63,18 +64,8 @@ typedef struct {
 class FT800
 {
 public:
-    FT800(PinName mosi,
-          PinName miso,
-          PinName sck,
-          PinName ss,
-          PinName intr,
-          PinName pd);
+    FT800();
 
-private:
-    SPI _spi;
-    DigitalOut	_ss;
-    DigitalOut	_pd;
-    InterruptIn	_f800_isr;
 public:
     /* Global used for buffer optimization */
     //Ft_Gpu_Hal_Context_t host,*phost;
